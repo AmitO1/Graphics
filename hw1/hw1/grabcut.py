@@ -12,6 +12,8 @@ GC_PR_FGD = 3 # Soft fg pixel
 
 beta = 0.0
 calc_Nlinks = False
+previous_energy = 0
+K = 0 
 
 # Define the GrabCut algorithm function
 def grabcut(img, rect, n_iter=5):
@@ -23,11 +25,9 @@ def grabcut(img, rect, n_iter=5):
     #Initalize the inner square to Foreground
     mask[y:y+h, x:x+w] = GC_PR_FGD
     mask[rect[1]+rect[3]//2, rect[0]+rect[2]//2] = GC_FGD
-    print(f"foreground pixels: {np.count_nonzero((mask == 1) | (mask == 3))}")
-    print(f"background pixels: {np.count_nonzero((mask == 0) | (mask == 2))}")
     bgGMM, fgGMM = initalize_GMMs(img, mask)
 
-    num_iters = 10
+    num_iters = 200
     for i in range(num_iters):
         #Update GMM
         print(f"Iter: {i}")
@@ -159,6 +159,8 @@ import numpy as np
 def calculate_mincut(img, mask, bgGMM, fgGMM):
     # Build the graph
     global calc_Nlinks
+    global k
+    weight_sum = 0
     image_col = img.shape[1]
     pixel_num = img.shape[0] * img.shape[1]
     graph = ig.Graph(directed=False)  # Directed graph for T-links
@@ -174,7 +176,6 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
                 pixel_label = mask[i, j]
                 zm = img[i, j]
                 vid_pixel = vid(image_col, i, j)
-                weight_sum = 0
                 
                 # N-links (connect neighboring pixels)
                 if i > 0:  
@@ -206,9 +207,31 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
                     weights.append(weight)
                     weight_sum += weight
                     
-            calc_Nlinks = True
             K = max(K,weight_sum)
-            #complitly redo Tlinks connections
+        calc_Nlinks = True
+    #complitly redo Tlinks connections
+    fg_D = - fgGMM.score_samples(img.reshape((-1, img.shape[-1]))).reshape(img.shape[:-1])
+    bg_D = - bgGMM.score_samples(img.reshape((-1, img.shape[-1]))).reshape(img.shape[:-1])
+    for i in range(img.shape[0]):
+        for j in range(img.shape[1]):
+            vid_pixel = vid(image_col, i, j)
+            if mask[i,j] == 0:
+                weight = K
+                edges.append((vid_pixel,S))
+                weights.append(K)
+                weight_sum+= weight
+            if mask[i,j] == 1:
+                weight = K
+                edges.append((vid_pixel,T))
+                weights.append(K)
+                weight_sum+= weight
+            else:
+                edges.append((vid_pixel,S))
+                weights.append(bg_D[i,j])
+                
+                edges.append((vid_pixel,T))
+                weights.append(fg_D[i,j])
+                     
 
     graph.add_edges(edges, attributes={'weight': weights})
     
@@ -238,30 +261,29 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
     return min_cut,energy
 
 def update_mask(mincut_sets, mask):
-    """
-    Update the mask based on the min-cut sets.
-    mincut_sets: A tuple of two sets. The first set contains foreground pixels,
-                 and the second set contains background pixels.
-    mask: The current mask of the image.
-    """
     fg_points, bg_points = mincut_sets
     print(f"fg-set: {len(fg_points)}, bg-set: {len(bg_points)}")
     for point in bg_points:
-        i,j = point
-        if mask[i,j] != 0:
-            mask[i,j] = 2
+        i, j = point
+        if mask[i, j] == GC_BGD:  
+            continue
+        mask[i, j] = GC_BGD  
+        
     for point in fg_points:
-        i,j = point
-        if mask[i,j] != 0:
-            mask[i,j] = 3
+        i, j = point
+        if mask[i, j] == GC_BGD:  
+            continue
+        mask[i, j] = GC_PR_FGD  
     return mask
 
 
 #TODO where to put previus energy
 def check_convergence(energy):
-    previous_energy = 0
+    print(f"Energy: {energy}")
+    global previous_energy
     threshold=1e-3
     convergence = abs(energy - previous_energy) < threshold
+    previous_energy = energy
     return convergence
 
 
