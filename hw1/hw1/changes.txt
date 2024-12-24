@@ -1,1 +1,1 @@
-something weird in the allocation of bg and fg and update
+find a way to save the graph after n links so no reapted calculations are needed

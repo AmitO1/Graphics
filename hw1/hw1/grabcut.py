@@ -27,7 +27,7 @@ def grabcut(img, rect, n_iter=5):
     mask[rect[1]+rect[3]//2, rect[0]+rect[2]//2] = GC_FGD
     bgGMM, fgGMM = initalize_GMMs(img, mask)
 
-    num_iters = 200
+    num_iters = 15
     for i in range(num_iters):
         #Update GMM
         print(f"Iter: {i}")
@@ -207,7 +207,7 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
                     weight_sum += weight
                     
             K = max(K,weight_sum)
-        calc_Nlinks = True
+        calc_Nlinks = False
     #complitly redo Tlinks connections
     fg_D = - fgGMM.score_samples(img.reshape((-1, img.shape[-1]))).reshape(img.shape[:-1])
     bg_D = - bgGMM.score_samples(img.reshape((-1, img.shape[-1]))).reshape(img.shape[:-1])
@@ -267,7 +267,7 @@ def update_mask(mincut_sets, mask):
     for point in bg_points:
         i, j = point
         mask[i, j] = GC_BGD  
-              
+                   
     for point in fg_points:
         i, j = point
         mask[i, j] = GC_PR_FGD  
