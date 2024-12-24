@@ -159,7 +159,7 @@ import numpy as np
 def calculate_mincut(img, mask, bgGMM, fgGMM):
     # Build the graph
     global calc_Nlinks
-    global k
+    global K
     weight_sum = 0
     image_col = img.shape[1]
     pixel_num = img.shape[0] * img.shape[1]
@@ -169,7 +169,6 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
     T = pixel_num + 1
     edges = []
     weights = []
-    K= 0
     if not calc_Nlinks:
         for i in range(img.shape[0]):
             for j in range(img.shape[1]):
