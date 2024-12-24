@@ -1,2 +1,1 @@
-add T - links right now after 1st iteration it stopped because there is no graph
-add global variable previous energy and fix him in a good place to calculate energy difference
+something weird in the allocation of bg and fg and update

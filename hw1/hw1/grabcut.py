@@ -216,20 +216,22 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
             vid_pixel = vid(image_col, i, j)
             if mask[i,j] == 0:
                 weight = K
-                edges.append((vid_pixel,S))
+                edges.append((vid_pixel,T))
                 weights.append(K)
                 weight_sum+= weight
             if mask[i,j] == 1:
                 weight = K
-                edges.append((vid_pixel,T))
+                edges.append((vid_pixel,S))
                 weights.append(K)
                 weight_sum+= weight
             else:
                 edges.append((vid_pixel,S))
                 weights.append(bg_D[i,j])
+                weight_sum+= bg_D[i,j]
                 
                 edges.append((vid_pixel,T))
                 weights.append(fg_D[i,j])
+                weight_sum += fg_D[i,j]
                      
 
     graph.add_edges(edges, attributes={'weight': weights})
@@ -237,6 +239,10 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
     cut = graph.st_mincut(S, T, capacity='weight')  
     bg_vertices = cut.partition[0]  
     fg_vertices = cut.partition[1]
+    
+    #check for correct allocation
+    if S in bg_vertices:
+        bg_vertices, fg_vertices = fg_vertices, bg_vertices
     #convert back to points and do not include S,T
     
     bg_vertices = [v for v in bg_vertices if v != S and v != T]
@@ -249,29 +255,21 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
     
     fg_indices = np.array(fg_set)
     fg_points = np.column_stack((fg_indices // mask.shape[1], fg_indices % mask.shape[1]))
-    #check for correct allocation    
-    if S in bg_vertices:
-        bg_vertices, fg_vertices = fg_vertices, bg_vertices
-    
-     
+         
     min_cut = [bg_points, fg_points]  
     energy = sum(weight for weight in weights)
     
     return min_cut,energy
 
 def update_mask(mincut_sets, mask):
-    fg_points, bg_points = mincut_sets
+    bg_points,fg_points = mincut_sets
     print(f"fg-set: {len(fg_points)}, bg-set: {len(bg_points)}")
     for point in bg_points:
         i, j = point
-        if mask[i, j] == GC_BGD:  
-            continue
         mask[i, j] = GC_BGD  
-        
+              
     for point in fg_points:
         i, j = point
-        if mask[i, j] == GC_BGD:  
-            continue
         mask[i, j] = GC_PR_FGD  
     return mask
 
