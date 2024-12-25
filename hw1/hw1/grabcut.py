@@ -14,6 +14,7 @@ beta = 0.0
 calc_Nlinks = False
 previous_energy = 0
 K = 0 
+nlinks_graph = ig.Graph(directed=False)
 
 # Define the GrabCut algorithm function
 def grabcut(img, rect, n_iter=5):
@@ -27,7 +28,7 @@ def grabcut(img, rect, n_iter=5):
     mask[rect[1]+rect[3]//2, rect[0]+rect[2]//2] = GC_FGD
     bgGMM, fgGMM = initalize_GMMs(img, mask)
 
-    num_iters = 15
+    num_iters = 100
     for i in range(num_iters):
         #Update GMM
         print(f"Iter: {i}")
@@ -159,6 +160,7 @@ import numpy as np
 def calculate_mincut(img, mask, bgGMM, fgGMM):
     # Build the graph
     global calc_Nlinks
+    global nlinks_graph
     global K
     weight_sum = 0
     image_col = img.shape[1]
@@ -170,10 +172,9 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
     edges = []
     weights = []
     if not calc_Nlinks:
+        nlinks_graph.add_vertices(pixel_num +2)
         for i in range(img.shape[0]):
             for j in range(img.shape[1]):
-                pixel_label = mask[i, j]
-                zm = img[i, j]
                 vid_pixel = vid(image_col, i, j)
                 
                 # N-links (connect neighboring pixels)
@@ -204,10 +205,15 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
                     weight = compute_nlink_weight(i, j, oi, oj)
                     edges.append((vid_pixel, vid(image_col,oi, oj)))
                     weights.append(weight)
-                    weight_sum += weight
-                    
+                    weight_sum += weight 
+                   
             K = max(K,weight_sum)
-        calc_Nlinks = False
+        nlinks_graph.add_edges(edges, attributes={'weight' : weights})    
+        calc_Nlinks = True
+        
+    graph = nlinks_graph.copy()
+    edges = []
+    weights = []
     #complitly redo Tlinks connections
     fg_D = - fgGMM.score_samples(img.reshape((-1, img.shape[-1]))).reshape(img.shape[:-1])
     bg_D = - bgGMM.score_samples(img.reshape((-1, img.shape[-1]))).reshape(img.shape[:-1])
@@ -264,17 +270,14 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
 def update_mask(mincut_sets, mask):
     bg_points,fg_points = mincut_sets
     print(f"fg-set: {len(fg_points)}, bg-set: {len(bg_points)}")
-    for point in bg_points:
-        i, j = point
-        mask[i, j] = GC_BGD  
-                   
+    mask.fill(0)                   
     for point in fg_points:
         i, j = point
         mask[i, j] = GC_PR_FGD  
     return mask
 
 
-#TODO where to put previus energy
+
 def check_convergence(energy):
     print(f"Energy: {energy}")
     global previous_energy
@@ -334,7 +337,7 @@ if __name__ == '__main__':
     else:
         rect = tuple(map(int,args.rect.split(',')))
 
-
+    print(rect)
     img = cv2.imread(input_path)
 
     # Run the GrabCut algorithm on the image and bounding box
