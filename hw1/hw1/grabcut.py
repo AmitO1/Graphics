@@ -52,37 +52,32 @@ def grabcut(img, rect, n_iter=5):
 
 # initialize GMM
 def initalize_GMMs(img, mask, n_components=5):
-    # Extract fg&bg pixels from mask
+    
     bg_pix = img[np.logical_or(mask == GC_PR_BGD, mask == GC_BGD)].reshape(-1, 3)
     fg_pix = img[np.logical_or(mask == GC_PR_FGD, mask == GC_FGD)].reshape(-1, 3)
 
-    # Initialize using k-means clustering algorithm & random state 2
-    kmeans_bg = KMeans(n_clusters=n_components, random_state=2)
+    kmeans_bg = KMeans(n_clusters=n_components, random_state=11)
     kmeans_bg.fit(bg_pix)
-    kmeans_fg = KMeans(n_clusters=n_components, random_state=2)
+    kmeans_fg = KMeans(n_clusters=n_components, random_state=11)
     kmeans_fg.fit(fg_pix)
 
-    # Initialize GMMs using k-means.cluster_centers algorithm & random state 2
-    fgGMM = GaussianMixture(n_components=n_components, means_init=kmeans_fg.cluster_centers_, random_state=2)
+    fgGMM = GaussianMixture(n_components=n_components, means_init=kmeans_fg.cluster_centers_, random_state=11)
     fgGMM.fit(fg_pix)
-    bgGMM = GaussianMixture(n_components=n_components, means_init=kmeans_bg.cluster_centers_, random_state=2)
+    bgGMM = GaussianMixture(n_components=n_components, means_init=kmeans_bg.cluster_centers_, random_state=11)
     bgGMM.fit(bg_pix)
 
     return bgGMM, fgGMM
 
 
-# update GMM using img, mask, bgGMM, fgGMM
 def update_GMMs(img, mask, bgGMM, fgGMM):
     fg_pix = img[np.logical_or(mask == GC_PR_FGD, mask == GC_FGD)].reshape(-1, 3)
     bg_pix = img[np.logical_or(mask == GC_PR_BGD, mask == GC_BGD)].reshape(-1, 3)
 
-    # init bgGMM
     bg_components = bgGMM.n_components
     bg_weights = np.zeros(bg_components)
     bg_means = np.zeros((bg_components, 3))
     bg_covs = np.zeros((bg_components, 3, 3))
 
-    # calc mean&covariance for all GMM components and update the GMM data (weights, mean and cov)
     for i in range(bg_components):
         component_mask = bgGMM.predict(bg_pix) == i
         component_data = bg_pix[component_mask]
@@ -93,12 +88,10 @@ def update_GMMs(img, mask, bgGMM, fgGMM):
             bg_means[i] = mean.flatten()
             bg_covs[i] = cov
 
-    # Update bgGMM data
     bgGMM.means_ = bg_means
     bgGMM.weights_ = bg_weights
     bgGMM.covariances_ = bg_covs
 
-    # Update fgGMM
     fg_components = fgGMM.n_components
     fg_weights = np.zeros(fg_components)
     fg_means = np.zeros((fg_components, 3))
@@ -118,7 +111,6 @@ def update_GMMs(img, mask, bgGMM, fgGMM):
     fgGMM.weights_ = fg_weights
     fgGMM.covariances_ = fg_covs
 
-    # remove components with the weight of 0
     fg_index_list = []
     bg_index_list = []
 
@@ -148,8 +140,6 @@ def update_GMMs(img, mask, bgGMM, fgGMM):
         fgGMM.covariances_ = np.delete(fgGMM.covariances_, fg_index_list, axis=0)
         fgGMM.means_init = np.delete(fgGMM.means_init, fg_index_list, axis=0)
 
-    print("bgGMM weights: " + str(bgGMM.weights_))
-    print("fgGMM weights: " + str(fgGMM.weights_))
     return bgGMM, fgGMM
 
 
@@ -174,7 +164,7 @@ def calculate_beta(img):
                 diff = img[i, j] - img[i-1, j+1]
                 beta += diff.dot(diff)
 
-    beta /= (8 * img.shape[0] * img.shape[1] - 3 * img.shape[0] - 3 * img.shape[1] + 2)
+    beta /= ((8 * img.shape[0] * img.shape[1]) - (2 * img.shape[0] * img.shape[1]))
     beta *= 2
     beta = 1 / beta
 
@@ -295,11 +285,11 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
     for i in range(img.shape[0]):
         for j in range(img.shape[1]):
             vid_pixel = vid(image_col, i, j)
-            if mask[i,j] == 0:
+            if mask[i,j] == GC_BGD:
                 weight = K_Nlinks[i+j]
                 edges.append((vid_pixel,T))
                 weights.append(weight)
-            if mask[i,j] == 1:
+            if mask[i,j] == GC_FGD:
                 weight = K_Nlinks[i+j]
                 edges.append((vid_pixel,S))
                 weights.append(weight)
@@ -380,7 +370,7 @@ def cal_metric(predicted_mask, gt_mask):
 
 def parse():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input_name', type=str, default='teddy', help='name of image from the course files')
+    parser.add_argument('--input_name', type=str, default='grave', help='name of image from the course files')
     parser.add_argument('--eval', type=int, default=1, help='calculate the metrics')
     parser.add_argument('--input_img_path', type=str, default='', help='if you wish to use your own img_path')
     parser.add_argument('--use_file_rect', type=int, default=1, help='Read rect from course files')
