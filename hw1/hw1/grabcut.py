@@ -10,16 +10,17 @@ GC_FGD = 1 # Hard fg pixel, will not be used
 GC_PR_BGD = 2 # Soft bg pixel
 GC_PR_FGD = 3 # Soft fg pixel
 
-beta = 0.0
+beta = 0
 calc_Nlinks = False
 previous_energy = 0
-nlinks_graph = ig.Graph(directed=False)
+nlinks_graph = ig.Graph()
 global_mask =[]
 K_Nlinks = []
 
 # Define the GrabCut algorithm function
 def grabcut(img, rect, n_iter=5):
     # Assign initial labels to the pixels based on the bounding box
+    img = np.asarray(img, dtype=np.float64)
     mask = np.zeros(img.shape[:2], dtype=np.uint8)
     mask.fill(GC_BGD)
     global global_mask
@@ -33,7 +34,6 @@ def grabcut(img, rect, n_iter=5):
     bgGMM, fgGMM = initalize_GMMs(img, mask)
 
     num_iters = 100
-    calculate_beta(img)
     for i in range(num_iters):
         #Update GMM
         print(f"Iter: {i}")
@@ -150,39 +150,39 @@ def calculate_beta(img):
     for i in range(img.shape[0]):
         for j in range(img.shape[1]):
             if i > 0:
-                diff = img[i, j] - img[i-1, j]
-                beta += diff.dot(diff)
+                beta += np.linalg.norm(img[i, j] - img[i-1, j]) ** 2
             if j > 0:
-                diff = img[i, j] - img[i, j-1]
-                beta += diff.dot(diff)
+                beta += np.linalg.norm(img[i, j] - img[i, j-1]) ** 2
             if i > 0 and j > 0:
-                diff = img[i, j] - img[i-1, j-1]
-                beta += diff.dot(diff)
+                beta += np.linalg.norm(img[i, j] - img[i-1, j-1]) ** 2
             if i > 0 and j < image_col - 1:
-                diff = img[i, j] - img[i-1, j+1]
-                beta += diff.dot(diff)
-                
-    beta /= ((8 * image_row * image_col) - (2 * image_row + 2*image_col))
-    beta *= 2
+                beta += np.linalg.norm(img[i, j] - img[i-1, j+1]) ** 2
+            if i < image_row -1 and j > 0:
+                beta += np.linalg.norm(img[i, j] - img[i+1, j-1]) ** 2
+            if i < image_row -1 and j < image_col -1:
+                beta += np.linalg.norm(img[i, j] - img[i+1, j+1]) ** 2
+            if j < image_col -1:
+                beta += np.linalg.norm(img[i,j] - img[i,j+1]) ** 2
+            if i < image_row -1:
+                beta += np.linalg.norm(img[i,j] - img[i+1,j]) ** 2
+          
+    beta = beta /  ((8 * image_row * image_col) - (2 * image_row + 2*image_col))
+    beta = 2 * beta
     beta = 1 / beta
 
 
 def compute_nlink_weight(i, j, oi, oj):
-    # Compute the weight for N-links based on color difference
+    # Compute the weight for N-links 
     global beta
-    diff = img[i, j] - img[oi, oj]
-    color_distance = np.dot(diff, diff)
-    spatial_distance = np.sqrt((i - oi)**2 + (j - oj)**2)  
-    return (50 / spatial_distance) * np.exp(-beta * color_distance)
+    color_distance = (np.linalg.norm(img[i, j] - img[oi, oj])) ** 2 
+    dist = np.sqrt(2) if (i != oi and j!=oj) else 1 
+    return (50/dist) * np.exp(-beta * color_distance)
 
 def vid(image_col,i,j):
     """
     used to give a unique id to each vertex
     """
     return (image_col*i) +j
-
-import numpy as np
-
     
 def calculate_mincut(img, mask, bgGMM, fgGMM):
     # Build the graph
@@ -192,19 +192,20 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
     image_col = img.shape[1]
     image_row = img.shape[0]
     pixel_num = img.shape[0] * img.shape[1]
-    graph = ig.Graph(directed=False)  # Directed graph for T-links
-    graph.add_vertices(pixel_num + 2)  # Add pixel nodes + S and T nodes
-    S = pixel_num
-    T = pixel_num + 1
+    graph = ig.Graph()  
+    graph.add_vertices(pixel_num + 2)  
+    backT = pixel_num
+    foreT = pixel_num + 1
     edges = []
     weights = []
     if not calc_Nlinks:
+        calculate_beta(img)
         nlinks_graph.add_vertices(pixel_num +2)
         for i in range(img.shape[0]):
             for j in range(img.shape[1]):
                 vid_pixel = vid(image_col, i, j)
                 K =0
-                # N-links (connect neighboring pixels)
+                # N-links 
                 if i > 0:  
                     oi, oj = i - 1, j
                     weight = compute_nlink_weight(i, j, oi, oj)
@@ -277,7 +278,7 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
     graph = nlinks_graph.copy()
     edges = []
     weights = []
-    #complitly redo Tlinks connections
+    #T-links 
     fg_D = - fgGMM.score_samples(img.reshape((-1, img.shape[-1]))).reshape(img.shape[:-1])
     bg_D = - bgGMM.score_samples(img.reshape((-1, img.shape[-1]))).reshape(img.shape[:-1])
     for i in range(img.shape[0]):
@@ -285,34 +286,38 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
             vid_pixel = vid(image_col, i, j)
             if mask[i,j] == GC_BGD:
                 weight = K_Nlinks[i+j]
-                edges.append((vid_pixel,T))
+                edges.append((vid_pixel,backT))
                 weights.append(weight)
+                edges.append((vid_pixel,foreT))
+                weights.append(0)
             if mask[i,j] == GC_FGD:
                 weight = K_Nlinks[i+j]
-                edges.append((vid_pixel,S))
+                edges.append((vid_pixel,foreT))
                 weights.append(weight)
+                edges.append((vid_pixel,backT))
+                weights.append(0)
             else:
-                edges.append((vid_pixel,S))
+                edges.append((vid_pixel,foreT))
                 weights.append(bg_D[i,j])
                 
-                edges.append((vid_pixel,T))
+                edges.append((vid_pixel,backT))
                 weights.append(fg_D[i,j])
                      
 
     graph.add_edges(edges, attributes={'weight': weights})
     
-    cut = graph.st_mincut(S, T, capacity='weight') 
+    cut = graph.st_mincut(backT, foreT, capacity='weight') 
     energy = cut.value 
     bg_vertices = cut.partition[0]  
     fg_vertices = cut.partition[1]
     
     #check for correct allocation
-    if S in bg_vertices:
+    if foreT in bg_vertices:
         bg_vertices, fg_vertices = fg_vertices, bg_vertices
     #convert back to points and do not include S,T
     
-    bg_vertices = [v for v in bg_vertices if v != S and v != T]
-    fg_vertices = [v for v in fg_vertices if v != S and v != T]
+    bg_vertices = [v for v in bg_vertices if v != backT and v != foreT]
+    fg_vertices = [v for v in fg_vertices if v != backT and v != foreT]
     bg_set = list(bg_vertices)
     fg_set = list(fg_vertices)
     
@@ -345,7 +350,7 @@ def check_convergence(energy):
     print(f"Energy: {energy}")
     global previous_energy
     global global_mask
-    threshold=10
+    threshold=100
     convergence = abs(energy - previous_energy) < threshold
     previous_energy = energy
     if convergence:
@@ -359,10 +364,10 @@ def cal_metric(predicted_mask, gt_mask):
     total_pixels = predicted_mask.size
     accuracy = correct_pixels / total_pixels
 
-    # Jaccard similarity (IoU) calculation for foreground
+    # Jaccard similarity
     intersection_fg = np.sum((predicted_mask == 1) & (gt_mask == 1))
     union_fg = np.sum((predicted_mask == 1) | (gt_mask == 1))
-    jaccard_similarity = intersection_fg / (union_fg + 1e-10)  # Add small epsilon to avoid division by 0
+    jaccard_similarity = intersection_fg / (union_fg)  
 
     return accuracy, jaccard_similarity
 
@@ -391,7 +396,6 @@ if __name__ == '__main__':
     else:
         rect = tuple(map(int,args.rect.split(',')))
 
-    print(rect)
     img = cv2.imread(input_path)
 
     # Run the GrabCut algorithm on the image and bounding box

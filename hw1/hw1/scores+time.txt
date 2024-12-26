@@ -1,0 +1,39 @@
+            if i < image_row -1 and j > 0:
+                diff = img[i, j] - img[i+1, j-1]
+                beta += diff.dot(diff)
+            if i < image_row -1 and j < image_col -1:
+                diff = img[i, j] - img[i+1, j+1]
+                beta += diff.dot(diff)
+            if j < image_col -1:
+                diff = img[i,j] - img[i,j+1]
+                beta += diff.dot(diff)
+            if i < image_row -1:
+                diff = img[i,j] - img[i+1,j]
+                beta += diff.dot(diff)
+
+
+
+            if i > 0:
+                diff = np.linalg.norm(img[i, j] - img[i-1, j]) ** 2
+                beta += diff
+            if j > 0:
+                diff = np.linalg.norm(img[i, j] - img[i, j-1]) ** 2
+                beta += diff
+            if i > 0 and j > 0:
+                diff = np.linalg.norm(img[i, j] - img[i-1, j-1]) ** 2
+                beta += diff
+            if i > 0 and j < image_col - 1:
+                diff = np.linalg.norm(img[i, j] - img[i-1, j+1]) ** 2
+                beta += diff
+            if i < image_row -1 and j > 0:
+                diff = np.linalg.norm(img[i, j] - img[i+1, j-1]) ** 2
+                beta += diff
+            if i < image_row -1 and j < image_col -1:
+                diff = np.linalg.norm(img[i, j] - img[i+1, j+1]) ** 2
+                beta += diff
+            if j < image_col -1:
+                diff = np.linalg.norm(img[i,j] - img[i,j+1]) ** 2
+                beta += diff
+            if i < image_row -1:
+                diff = np.linalg.norm(img[i,j] - img[i+1,j]) ** 2
+                beta += diff
