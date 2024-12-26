@@ -33,12 +33,12 @@ def grabcut(img, rect, n_iter=5):
     bgGMM, fgGMM = initalize_GMMs(img, mask)
 
     num_iters = 100
+    calculate_beta(img)
     for i in range(num_iters):
         #Update GMM
         print(f"Iter: {i}")
         bgGMM, fgGMM = update_GMMs(img, mask, bgGMM, fgGMM)
 
-        calculate_beta(img)
         mincut_sets, energy = calculate_mincut(img, mask, bgGMM, fgGMM)
 
         mask = update_mask(mincut_sets, mask)
@@ -57,14 +57,14 @@ def initalize_GMMs(img, mask, n_components=5):
     fg_pix = img[np.logical_or(mask == GC_PR_FGD, mask == GC_FGD)].reshape(-1, 3)
 
     kmeans_bg = KMeans(n_clusters=n_components, random_state=11)
-    kmeans_bg.fit(bg_pix)
     kmeans_fg = KMeans(n_clusters=n_components, random_state=11)
+    kmeans_bg.fit(bg_pix)
     kmeans_fg.fit(fg_pix)
 
     fgGMM = GaussianMixture(n_components=n_components, means_init=kmeans_fg.cluster_centers_, random_state=11)
-    fgGMM.fit(fg_pix)
     bgGMM = GaussianMixture(n_components=n_components, means_init=kmeans_bg.cluster_centers_, random_state=11)
     bgGMM.fit(bg_pix)
+    fgGMM.fit(fg_pix)
 
     return bgGMM, fgGMM
 
@@ -370,25 +370,13 @@ def cal_metric(predicted_mask, gt_mask):
 
 def parse():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input_name', type=str, default='grave', help='name of image from the course files')
+    parser.add_argument('--input_name', type=str, default='llama', help='name of image from the course files')
     parser.add_argument('--eval', type=int, default=1, help='calculate the metrics')
     parser.add_argument('--input_img_path', type=str, default='', help='if you wish to use your own img_path')
     parser.add_argument('--use_file_rect', type=int, default=1, help='Read rect from course files')
     parser.add_argument('--rect', type=str, default='1,1,100,100', help='if you wish change the rect (x,y,w,h')
     return parser.parse_args()
 
-def test_gmm_methods():
-    # Load a test image
-    img = cv2.imread('data/imgs/banana1.jpg')  # Replace with a valid path if needed
-
-    # Create a dummy mask and bounding box
-    mask = np.zeros(img.shape[:2], dtype=np.uint8)
-    rect = (50, 50, 150, 150)  # Example bounding box
-    mask[rect[1]:rect[1]+rect[3], rect[0]:rect[0]+rect[2]] = GC_PR_FGD
-    mask[rect[1]+rect[3]//2, rect[0]+rect[2]//2] = GC_FGD
- 
-
-test_gmm_methods()
 
 if __name__ == '__main__':
     # Load an example image and define a bounding box around the object of interest
