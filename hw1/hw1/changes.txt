@@ -1,1 +1,2 @@
-find a way to save the graph after n links so no reapted calculations are needed
+try and save a paramter for each pixel if hes in the back ground or in the fore ground 1/0 and then play
+with 0,1,2,3 a bit more because im not using them at all only  1/0 - not using soft bg

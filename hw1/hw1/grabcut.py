@@ -13,15 +13,19 @@ GC_PR_FGD = 3 # Soft fg pixel
 beta = 0.0
 calc_Nlinks = False
 previous_energy = 0
-K = 0 
 nlinks_graph = ig.Graph(directed=False)
+global_mask =[]
+K_Nlinks = []
 
 # Define the GrabCut algorithm function
 def grabcut(img, rect, n_iter=5):
     # Assign initial labels to the pixels based on the bounding box
     mask = np.zeros(img.shape[:2], dtype=np.uint8)
     mask.fill(GC_BGD)
+    global global_mask
     x, y, w, h = rect
+    w -= x
+    h -= y
 
     #Initalize the inner square to Foreground
     mask[y:y+h, x:x+w] = GC_PR_FGD
@@ -38,81 +42,116 @@ def grabcut(img, rect, n_iter=5):
         mincut_sets, energy = calculate_mincut(img, mask, bgGMM, fgGMM)
 
         mask = update_mask(mincut_sets, mask)
-
+        global_mask = mask
         if check_convergence(energy):
             break
-
+        
     # Return the final mask and the GMMs
     return mask, bgGMM, fgGMM
 
 
-def initalize_GMMs(img, mask):
-    # Extract background and foreground pixels
-    bg_pixels = img[np.where((mask == GC_BGD) | (mask == GC_PR_BGD))]  
-    fg_pixels = img[np.where((mask == GC_FGD) | (mask == GC_PR_FGD))] 
+# initialize GMM
+def initalize_GMMs(img, mask, n_components=5):
+    # Extract fg&bg pixels from mask
+    bg_pix = img[np.logical_or(mask == GC_PR_BGD, mask == GC_BGD)].reshape(-1, 3)
+    fg_pix = img[np.logical_or(mask == GC_PR_FGD, mask == GC_FGD)].reshape(-1, 3)
 
-    n_components = 5
+    # Initialize using k-means clustering algorithm & random state 2
+    kmeans_bg = KMeans(n_clusters=n_components, random_state=2)
+    kmeans_bg.fit(bg_pix)
+    kmeans_fg = KMeans(n_clusters=n_components, random_state=2)
+    kmeans_fg.fit(fg_pix)
 
-    # Create GMMs Initialized with kmeans
-    bgGMM = GaussianMixture(n_components=n_components, random_state=11,init_params='kmeans')
-    fgGMM = GaussianMixture(n_components=n_components, random_state=11,init_params='kmeans')
-
-    # Fit the GMMs using pixels
-    bgGMM.fit(bg_pixels)
-    fgGMM.fit(fg_pixels)
+    # Initialize GMMs using k-means.cluster_centers algorithm & random state 2
+    fgGMM = GaussianMixture(n_components=n_components, means_init=kmeans_fg.cluster_centers_, random_state=2)
+    fgGMM.fit(fg_pix)
+    bgGMM = GaussianMixture(n_components=n_components, means_init=kmeans_bg.cluster_centers_, random_state=2)
+    bgGMM.fit(bg_pix)
 
     return bgGMM, fgGMM
 
 
-# Define helper functions for the GrabCut algorithm
+# update GMM using img, mask, bgGMM, fgGMM
 def update_GMMs(img, mask, bgGMM, fgGMM):
-    
-    bg_pixels = img[np.where((mask == GC_BGD) | (mask == GC_PR_BGD))]  
-    fg_pixels = img[np.where((mask == GC_FGD) | (mask == GC_PR_FGD))] 
+    fg_pix = img[np.logical_or(mask == GC_PR_FGD, mask == GC_FGD)].reshape(-1, 3)
+    bg_pix = img[np.logical_or(mask == GC_PR_BGD, mask == GC_BGD)].reshape(-1, 3)
 
-    # Predict GMM components (assignments) for each pixel
-    bg_labels = bgGMM.predict(bg_pixels) 
-    fg_labels = fgGMM.predict(fg_pixels) 
+    # init bgGMM
+    bg_components = bgGMM.n_components
+    bg_weights = np.zeros(bg_components)
+    bg_means = np.zeros((bg_components, 3))
+    bg_covs = np.zeros((bg_components, 3, 3))
 
-    # Update Background GMM
-    for i in range(bgGMM.n_components):
-        component_pixels = bg_pixels[bg_labels == i]
+    # calc mean&covariance for all GMM components and update the GMM data (weights, mean and cov)
+    for i in range(bg_components):
+        component_mask = bgGMM.predict(bg_pix) == i
+        component_data = bg_pix[component_mask]
 
-        mean = np.mean(component_pixels, axis=0) if len(component_pixels) > 0 else bgGMM.means_[i]
-        cov = np.zeros((mean.shape[0], mean.shape[0]), dtype=np.float32)
-        
-        if len(component_pixels) > 1:
-            cv2.calcCovarMatrix(component_pixels, mean=None,covar=cov, flags=cv2.COVAR_NORMAL | cv2.COVAR_ROWS)
-            cov /= len(component_pixels)
-        else:
-            cov = bgGMM.covariances_[i]
+        if len(component_data) > 0:
+            bg_weights[i] = len(component_data) / len(bg_pix)
+            cov, mean = cv2.calcCovarMatrix(component_data, None, cv2.COVAR_NORMAL | cv2.COVAR_SCALE | cv2.COVAR_ROWS)
+            bg_means[i] = mean.flatten()
+            bg_covs[i] = cov
 
-        weight = len(component_pixels) / len(bg_pixels) if len(bg_pixels) > 0 else 1 / bgGMM.n_components
+    # Update bgGMM data
+    bgGMM.means_ = bg_means
+    bgGMM.weights_ = bg_weights
+    bgGMM.covariances_ = bg_covs
 
-        bgGMM.means_[i] = mean
-        bgGMM.covariances_[i] = cov
-        bgGMM.weights_[i] = weight
+    # Update fgGMM
+    fg_components = fgGMM.n_components
+    fg_weights = np.zeros(fg_components)
+    fg_means = np.zeros((fg_components, 3))
+    fg_covs = np.zeros((fg_components, 3, 3))
 
-    # Update Foreground GMM
-    for i in range(fgGMM.n_components):
-        component_pixels = fg_pixels[fg_labels == i]
+    for i in range(fg_components):
+        component_mask = fgGMM.predict(fg_pix) == i
+        component_data = fg_pix[component_mask]
 
-        mean = np.mean(component_pixels, axis=0) if len(component_pixels) > 0 else fgGMM.means_[i]
-        cov = np.zeros((mean.shape[0], mean.shape[0]), dtype=np.float32)
-        
-        if len(component_pixels) > 1:
-            cv2.calcCovarMatrix(component_pixels, mean=None,covar=cov, flags=cv2.COVAR_NORMAL | cv2.COVAR_ROWS)
-            cov /= len(component_pixels)
-        else:
-            cov = fgGMM.covariances_[i]
-            
-        weight = len(component_pixels) / len(fg_pixels) if len(fg_pixels) > 0 else 1 / fgGMM.n_components
+        if len(component_data) > 0:
+            fg_weights[i] = len(component_data) / len(fg_pix)
+            cov, mean = cv2.calcCovarMatrix(component_data, None, cv2.COVAR_NORMAL | cv2.COVAR_SCALE | cv2.COVAR_ROWS)
+            fg_means[i] = mean.flatten()
+            fg_covs[i] = cov
 
-        fgGMM.means_[i] = mean
-        fgGMM.covariances_[i] = cov
-        fgGMM.weights_[i] = weight
+    fgGMM.means_ = fg_means
+    fgGMM.weights_ = fg_weights
+    fgGMM.covariances_ = fg_covs
 
-    return bgGMM,fgGMM
+    # remove components with the weight of 0
+    fg_index_list = []
+    bg_index_list = []
+
+    for i in range(len(fgGMM.weights_)):
+        if fgGMM.weights_[i] <= 0.005:
+            fg_index_list.append(i)
+
+    for i in range(len(bgGMM.weights_)):
+        if bgGMM.weights_[i] <= 0.005:
+            bg_index_list.append(i)
+
+    if len(bg_index_list) > 0:
+        bgGMM.n_components = bgGMM.n_components - len(bg_index_list)
+        bgGMM.weights_ = np.delete(bgGMM.weights_, bg_index_list, axis=0)
+        bgGMM.precisions_ = np.delete(bgGMM.precisions_, bg_index_list, axis=0)
+        bgGMM.precisions_cholesky_ = np.delete(bgGMM.precisions_cholesky_, bg_index_list, axis=0)
+        bgGMM.means_ = np.delete(bgGMM.means_, bg_index_list, axis=0)
+        bgGMM.covariances_ = np.delete(bgGMM.covariances_, bg_index_list, axis=0)
+        bgGMM.means_init = np.delete(bgGMM.means_init, bg_index_list, axis=0)
+
+    if len(fg_index_list) > 0:
+        fgGMM.n_components = fgGMM.n_components - len(fg_index_list)
+        fgGMM.weights_ = np.delete(fgGMM.weights_, fg_index_list, axis=0)
+        fgGMM.precisions_ = np.delete(fgGMM.precisions_, fg_index_list, axis=0)
+        fgGMM.precisions_cholesky_ = np.delete(fgGMM.precisions_cholesky_, fg_index_list, axis=0)
+        fgGMM.means_ = np.delete(fgGMM.means_, fg_index_list, axis=0)
+        fgGMM.covariances_ = np.delete(fgGMM.covariances_, fg_index_list, axis=0)
+        fgGMM.means_init = np.delete(fgGMM.means_init, fg_index_list, axis=0)
+
+    print("bgGMM weights: " + str(bgGMM.weights_))
+    print("fgGMM weights: " + str(fgGMM.weights_))
+    return bgGMM, fgGMM
+
 
 def calculate_beta(img):
     """
@@ -135,7 +174,7 @@ def calculate_beta(img):
                 diff = img[i, j] - img[i-1, j+1]
                 beta += diff.dot(diff)
 
-    beta /= (4 * img.shape[0] * img.shape[1] - 3 * img.shape[0] - 3 * img.shape[1] + 2)
+    beta /= (8 * img.shape[0] * img.shape[1] - 3 * img.shape[0] - 3 * img.shape[1] + 2)
     beta *= 2
     beta = 1 / beta
 
@@ -161,9 +200,9 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
     # Build the graph
     global calc_Nlinks
     global nlinks_graph
-    global K
-    weight_sum = 0
+    global K_Nlinks
     image_col = img.shape[1]
+    image_row = img.shape[0]
     pixel_num = img.shape[0] * img.shape[1]
     graph = ig.Graph(directed=False)  # Directed graph for T-links
     graph.add_vertices(pixel_num + 2)  # Add pixel nodes + S and T nodes
@@ -176,38 +215,74 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
         for i in range(img.shape[0]):
             for j in range(img.shape[1]):
                 vid_pixel = vid(image_col, i, j)
-                
+                K =0
                 # N-links (connect neighboring pixels)
                 if i > 0:  
                     oi, oj = i - 1, j
                     weight = compute_nlink_weight(i, j, oi, oj)
                     edges.append((vid_pixel, vid(image_col,oi, oj)))
                     weights.append(weight)
-                    weight_sum += weight
+                    if weight > K:
+                        K = weight
                             
                 if j > 0:  
                     oi, oj = i, j - 1
                     weight = compute_nlink_weight(i, j, oi, oj)
                     edges.append((vid_pixel, vid(image_col,oi, oj)))
                     weights.append(weight)
-                    weight_sum += weight
-                    
+                    if weight > K:
+                        K = weight
+                
+                if i < image_row -1:
+                    oi,oj = i +1, j
+                    weight = compute_nlink_weight(i, j, oi, oj)
+                    edges.append((vid_pixel, vid(image_col,oi, oj)))
+                    weights.append(weight)
+                    if weight > K:
+                        K = weight
+                
+                if j < image_col -1:
+                    oi,oj = i, j+1
+                    weight = compute_nlink_weight(i, j, oi, oj)
+                    edges.append((vid_pixel, vid(image_col,oi, oj)))
+                    weights.append(weight) 
+                    if weight > K:
+                        K = weight
                     
                 if i > 0 and j > 0: 
                     oi, oj = i - 1, j - 1
                     weight = compute_nlink_weight(i, j, oi, oj)
                     edges.append((vid_pixel, vid(image_col,oi, oj)))
                     weights.append(weight)
-                    weight_sum += weight
+                    if weight > K:
+                        K = weight
                     
                 if i > 0 and j < img.shape[1] - 1: 
                     oi, oj = i - 1, j + 1
                     weight = compute_nlink_weight(i, j, oi, oj)
                     edges.append((vid_pixel, vid(image_col,oi, oj)))
                     weights.append(weight)
-                    weight_sum += weight 
+                    if weight > K:
+                        K = weight
+                
+                if i < image_row -1 and j > 0:
+                    oi,oj = i +1, j -1
+                    weight = compute_nlink_weight(i, j, oi, oj)
+                    edges.append((vid_pixel, vid(image_col,oi, oj)))
+                    weights.append(weight)
+                    if weight > K:
+                        K = weight
+                    
+                if i < image_row -1 and j < image_col -1:
+                    oi,oj= i+1, j +1
+                    weight = compute_nlink_weight(i, j, oi, oj)
+                    edges.append((vid_pixel, vid(image_col,oi, oj)))
+                    weights.append(weight)
+                    if weight > K:
+                        K = weight
+                        
+                K_Nlinks.append(K)
                    
-            K = max(K,weight_sum)
         nlinks_graph.add_edges(edges, attributes={'weight' : weights})    
         calc_Nlinks = True
         
@@ -221,28 +296,25 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
         for j in range(img.shape[1]):
             vid_pixel = vid(image_col, i, j)
             if mask[i,j] == 0:
-                weight = K
+                weight = K_Nlinks[i+j]
                 edges.append((vid_pixel,T))
-                weights.append(K)
-                weight_sum+= weight
+                weights.append(weight)
             if mask[i,j] == 1:
-                weight = K
+                weight = K_Nlinks[i+j]
                 edges.append((vid_pixel,S))
-                weights.append(K)
-                weight_sum+= weight
+                weights.append(weight)
             else:
                 edges.append((vid_pixel,S))
                 weights.append(bg_D[i,j])
-                weight_sum+= bg_D[i,j]
                 
                 edges.append((vid_pixel,T))
                 weights.append(fg_D[i,j])
-                weight_sum += fg_D[i,j]
                      
 
     graph.add_edges(edges, attributes={'weight': weights})
     
-    cut = graph.st_mincut(S, T, capacity='weight')  
+    cut = graph.st_mincut(S, T, capacity='weight') 
+    energy = cut.value 
     bg_vertices = cut.partition[0]  
     fg_vertices = cut.partition[1]
     
@@ -263,17 +335,20 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
     fg_points = np.column_stack((fg_indices // mask.shape[1], fg_indices % mask.shape[1]))
          
     min_cut = [bg_points, fg_points]  
-    energy = sum(weight for weight in weights)
     
     return min_cut,energy
 
 def update_mask(mincut_sets, mask):
     bg_points,fg_points = mincut_sets
-    print(f"fg-set: {len(fg_points)}, bg-set: {len(bg_points)}")
-    mask.fill(0)                   
+    print(f"fg-set: {len(fg_points)}, bg-set: {len(bg_points)}")                   
     for point in fg_points:
         i, j = point
-        mask[i, j] = GC_PR_FGD  
+        if mask[i,j] == GC_PR_BGD or mask[i,j] == GC_PR_FGD:
+            mask[i, j] = GC_PR_FGD  
+    for point in bg_points:
+        i, j = point
+        if mask[i,j] == GC_PR_BGD or mask[i,j] == GC_PR_FGD:
+            mask[i, j] = GC_PR_BGD 
     return mask
 
 
@@ -281,9 +356,12 @@ def update_mask(mincut_sets, mask):
 def check_convergence(energy):
     print(f"Energy: {energy}")
     global previous_energy
-    threshold=1e-3
+    global global_mask
+    threshold=10
     convergence = abs(energy - previous_energy) < threshold
     previous_energy = energy
+    if convergence:
+        global_mask[global_mask == GC_PR_BGD] = GC_BGD
     return convergence
 
 
@@ -302,7 +380,7 @@ def cal_metric(predicted_mask, gt_mask):
 
 def parse():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input_name', type=str, default='banana1', help='name of image from the course files')
+    parser.add_argument('--input_name', type=str, default='teddy', help='name of image from the course files')
     parser.add_argument('--eval', type=int, default=1, help='calculate the metrics')
     parser.add_argument('--input_img_path', type=str, default='', help='if you wish to use your own img_path')
     parser.add_argument('--use_file_rect', type=int, default=1, help='Read rect from course files')
