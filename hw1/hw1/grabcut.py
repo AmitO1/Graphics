@@ -144,11 +144,9 @@ def update_GMMs(img, mask, bgGMM, fgGMM):
 
 
 def calculate_beta(img):
-    """
-    Calculate beta using squared differences between neighboring pixels.
-    connect_diag: include diagonal pixels in the calculation.
-    """
     global beta
+    image_col = img.shape[1]
+    image_row = img.shape[0]
     for i in range(img.shape[0]):
         for j in range(img.shape[1]):
             if i > 0:
@@ -160,11 +158,11 @@ def calculate_beta(img):
             if i > 0 and j > 0:
                 diff = img[i, j] - img[i-1, j-1]
                 beta += diff.dot(diff)
-            if i > 0 and j < img.shape[1] - 1:
+            if i > 0 and j < image_col - 1:
                 diff = img[i, j] - img[i-1, j+1]
                 beta += diff.dot(diff)
-
-    beta /= ((8 * img.shape[0] * img.shape[1]) - (2 * img.shape[0] * img.shape[1]))
+                
+    beta /= ((8 * image_row * image_col) - (2 * image_row + 2*image_col))
     beta *= 2
     beta = 1 / beta
 
