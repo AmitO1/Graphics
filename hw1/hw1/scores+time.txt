@@ -1,39 +1,63 @@
-            if i < image_row -1 and j > 0:
-                diff = img[i, j] - img[i+1, j-1]
-                beta += diff.dot(diff)
-            if i < image_row -1 and j < image_col -1:
-                diff = img[i, j] - img[i+1, j+1]
-                beta += diff.dot(diff)
-            if j < image_col -1:
-                diff = img[i,j] - img[i,j+1]
-                beta += diff.dot(diff)
-            if i < image_row -1:
-                diff = img[i,j] - img[i+1,j]
-                beta += diff.dot(diff)
+banana1 - thershold(1000)
+Accuracy=0.675859375, Jaccard=0.44131871584546156
+Running Time: 36.041632890701294
 
+banana1 thershold(1000) 2GMM
 
+Accuracy=0.96380859375, Jaccard=0.8760590386158923
+Running Time: 39.07534694671631
 
-            if i > 0:
-                diff = np.linalg.norm(img[i, j] - img[i-1, j]) ** 2
-                beta += diff
-            if j > 0:
-                diff = np.linalg.norm(img[i, j] - img[i, j-1]) ** 2
-                beta += diff
-            if i > 0 and j > 0:
-                diff = np.linalg.norm(img[i, j] - img[i-1, j-1]) ** 2
-                beta += diff
-            if i > 0 and j < image_col - 1:
-                diff = np.linalg.norm(img[i, j] - img[i-1, j+1]) ** 2
-                beta += diff
-            if i < image_row -1 and j > 0:
-                diff = np.linalg.norm(img[i, j] - img[i+1, j-1]) ** 2
-                beta += diff
-            if i < image_row -1 and j < image_col -1:
-                diff = np.linalg.norm(img[i, j] - img[i+1, j+1]) ** 2
-                beta += diff
-            if j < image_col -1:
-                diff = np.linalg.norm(img[i,j] - img[i,j+1]) ** 2
-                beta += diff
-            if i < image_row -1:
-                diff = np.linalg.norm(img[i,j] - img[i+1,j]) ** 2
-                beta += diff
+* could see that banana1 background is very similiar to the banana color which make it harder to seprate
+
+banana2 - thershold(1000)
+Accuracy=0.99046875, Jaccard=0.9607811620991722
+Running Time: 39.66049408912659
+
+* banana2 on the other hand will converge much quicker (3 iteration) do to difference color in the background
+* and will work with much higher thershold
+
+book - thershold(1000)
+Accuracy=0.9380338541666666, Jaccard=0.8564230978096905
+Running Time: 37.25128889083862
+
+bush - thershold(1000)
+Accuracy=0.8610851851851852, Jaccard=0.5439490290967013
+Running Time: 25.67837405204773
+
+*bad result likely due to small contrast from the bush to the grass
+
+cross - thershold(1000)
+Accuracy=0.5297592592592593, Jaccard=0.4394753455682064
+Running Time: 20.284379959106445
+
+flower - thershold(1000) - also took only 3 iterations
+Accuracy=0.9939888888888889, Jaccard=0.9698366383556043
+Running Time: 25.253867864608765
+
+fullmoon thershold(1000)
+Accuracy=0.9664447317388494, Jaccard=0.642468489565397
+Running Time: 13.6828773021698
+
+grave thershold(1000)
+Accuracy=0.9856777777777778, Jaccard=0.8914922273977215
+Running Time: 34.54776191711426
+
+llama thershold(1000)
+Accuracy=0.9886718893670234, Jaccard=0.9359400998336106
+Running Time: 20.166574239730835
+
+memorial thershold(1000)
+Accuracy=0.9932222222222222, Jaccard=0.9639302256824678
+Running Time: 28.475631952285767
+
+sheep thershold(1000)
+Accuracy=0.9961629629629629, Jaccard=0.9311765096658473
+Running Time: 32.43655705451965
+
+stone2 thershold(1000)
+Accuracy=0.995634765625, Jaccard=0.9822440548699751
+Running Time: 31.467578172683716
+
+teddy thershold(1000)
+Accuracy=0.9891889022577677, Jaccard=0.9515214027849407
+Running Time: 9.065907001495361
