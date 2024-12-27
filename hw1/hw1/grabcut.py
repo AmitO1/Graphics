@@ -73,6 +73,7 @@ def initalize_GMMs(img, mask, n_components=5):
 
 
 def update_GMMs(img, mask, bgGMM, fgGMM):
+    #find pixels with background and forground colors
     fg_pix = img[np.logical_or(mask == GC_PR_FGD, mask == GC_FGD)].reshape(-1, 3)
     bg_pix = img[np.logical_or(mask == GC_PR_BGD, mask == GC_BGD)].reshape(-1, 3)
 
@@ -81,6 +82,7 @@ def update_GMMs(img, mask, bgGMM, fgGMM):
     bg_means = np.zeros((bg_components, 3))
     bg_covs = np.zeros((bg_components, 3, 3))
 
+    #update bg mean,cov,weights
     for i in range(bg_components):
         component_mask = bgGMM.predict(bg_pix) == i
         component_data = bg_pix[component_mask]
@@ -100,6 +102,7 @@ def update_GMMs(img, mask, bgGMM, fgGMM):
     fg_means = np.zeros((fg_components, 3))
     fg_covs = np.zeros((fg_components, 3, 3))
 
+    #update fg mean,cov,weights
     for i in range(fg_components):
         component_mask = fgGMM.predict(fg_pix) == i
         component_data = fg_pix[component_mask]
@@ -114,6 +117,7 @@ def update_GMMs(img, mask, bgGMM, fgGMM):
     fgGMM.weights_ = fg_weights
     fgGMM.covariances_ = fg_covs
 
+    #remove fg and bg componenet with low weight
     fg_index_list = []
     bg_index_list = []
 
@@ -185,6 +189,9 @@ def compute_nlink_weight(i, j, oi, oj):
     return (50/dist) * np.exp(-beta * color_distance)
 
 def vid(image_col,i,j):
+    """
+    convert points to indexes for the graph
+    """
     return (image_col*i) +j
     
 def calculate_mincut(img, mask, bgGMM, fgGMM):
@@ -201,6 +208,8 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
     foreT = pixel_num + 1
     edges = []
     weights = []
+    
+    #calc N-links once
     if not calc_Nlinks:
         calculate_beta(img)
         nlinks_graph.add_vertices(pixel_num +2)
@@ -209,7 +218,6 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
                 total_weight = 0
                 vid_pixel = vid(image_col, i, j)
                 K =0
-                # N-links 
                 if i > 0:  
                     oi, oj = i - 1, j
                     weight = compute_nlink_weight(i, j, oi, oj)
@@ -274,7 +282,7 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
     graph = nlinks_graph.copy()
     edges = []
     weights = []
-    #T-links 
+    #calc T-links 
     fg_D = - fgGMM.score_samples(img.reshape((-1, img.shape[-1]))).reshape(img.shape[:-1])
     bg_D = - bgGMM.score_samples(img.reshape((-1, img.shape[-1]))).reshape(img.shape[:-1])
     for i in range(img.shape[0]):
@@ -310,6 +318,7 @@ def calculate_mincut(img, mask, bgGMM, fgGMM):
     #check for correct allocation
     if foreT in bg_vertices:
         bg_vertices, fg_vertices = fg_vertices, bg_vertices
+        
     #convert back to points and do not include S,T
     
     bg_vertices = [v for v in bg_vertices if v != backT and v != foreT]
