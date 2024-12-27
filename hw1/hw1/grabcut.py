@@ -420,7 +420,6 @@ if __name__ == '__main__':
     img_cut = img * (mask[:, :, np.newaxis])
     cv2.imshow('Original Image', img)
     cv2.imshow('GrabCut Mask', 255 * mask)
-    cv2.imwrite('bush.bmp',255*mask)
     cv2.imshow('GrabCut Result', img_cut)
     end_time = time.time()
     print(f"Running Time: {end_time - start_time}")
