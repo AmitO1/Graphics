@@ -379,7 +379,7 @@ def cal_metric(predicted_mask, gt_mask):
 
 def parse():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input_name', type=str, default='llama_high_blur', help='name of image from the course files')
+    parser.add_argument('--input_name', type=str, default='bush', help='name of image from the course files')
     parser.add_argument('--eval', type=int, default=1, help='calculate the metrics')
     parser.add_argument('--input_img_path', type=str, default='', help='if you wish to use your own img_path')
     parser.add_argument('--use_file_rect', type=int, default=1, help='Read rect from course files')
@@ -420,6 +420,7 @@ if __name__ == '__main__':
     img_cut = img * (mask[:, :, np.newaxis])
     cv2.imshow('Original Image', img)
     cv2.imshow('GrabCut Mask', 255 * mask)
+    cv2.imwrite('bush.bmp',255*mask)
     cv2.imshow('GrabCut Result', img_cut)
     end_time = time.time()
     print(f"Running Time: {end_time - start_time}")
