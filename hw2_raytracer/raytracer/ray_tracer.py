@@ -91,7 +91,7 @@ def main():
             ray = image_cen - vec_up*ratio*(i - math.floor(args.height/2)) - vec_right*ratio*(j - math.floor(args.width/2)) - camera.position
             ray /= np.linalg.norm(ray)
             
-            trace_ray(ray,i,j,image_array,camera, scene_settings, objects,camera.position,1)
+            trace_ray(ray,i,j,image_array,scene_settings, objects,camera.position,1)
     
     
     image_array = np.clip(image_array.astype(int),0,255)   
@@ -99,9 +99,9 @@ def main():
     # Save the output image
     save_image(image_array)
     
-def trace_ray(ray ,i , j, image_array, camera, scene_settings, objects,origin_point, depth):
+def trace_ray(ray ,i , j, image_array, scene_settings, objects,origin_point, depth):
     if depth > scene_settings.max_recursions:
-        return None
+        return np.array([0, 0, 0])
     
     closest_intersection_dist, closest_surface = find_closest_intersection(objects, origin_point, ray)
     
@@ -125,12 +125,14 @@ def trace_ray(ray ,i , j, image_array, camera, scene_settings, objects,origin_po
         elif type(closest_surface[0]) == Cube :
             center = closest_surface[0].position
             edge_length = closest_surface[0].scale
+            
             planes = [(0,np.array([1,0,0]),center[0] + edge_length/2),
                       (1,np.array([-1,0,0]),center[0] - edge_length/2),
                       (2,np.array([0,1,0]),center[1] + edge_length/2),
                       (3,np.array([0,-1,0]),center[1] - edge_length/2),
                       (4,np.array([0,0,1]),center[2] + edge_length/2),
                       (5,np.array([0,0,-1]),center[2] - edge_length/2)]
+            
             minimal_distance = float('inf')
             closest_plane = None
             normal = None
@@ -150,24 +152,33 @@ def trace_ray(ray ,i , j, image_array, camera, scene_settings, objects,origin_po
         material_index = closest_surface[0].material_index
         counter = 0
         surface_material = None
+        
         for object in objects :
+            
             if type(object) == Material :
                 counter += 1
+                
                 if counter == material_index :
                     surface_material = object
                     break 
+                
         material_diffuse = surface_material.diffuse_color
         material_specular = surface_material.specular_color
+        
         return_color,reflected_ray = apply_lightning_effect(objects,closest_surface,normal,ray,scene_settings,surface_material,material_diffuse,material_specular,view)
 
-        recursion_color = trace_ray(reflected_ray,i,j,image_array,objects,scene_settings,closest_surface[1],depth + 1)
+        recursion_color = trace_ray(reflected_ray,i,j,image_array,scene_settings,objects,closest_surface[1],depth + 1)
+        
         if surface_material.transparency == 0 :
             return_color += np.array(surface_material.reflection_color) * recursion_color
+            
         else :
             transparency_color = trace_ray(ray,i,j,image_array,objects,scene_settings,closest_surface[1],depth + 1)
             return_color += transparency_color * np.array(surface_material.transparency) + np.array(surface_material.reflection_color)*recursion_color
+        
         if depth == 1:
             image_array[i][j] = return_color
+            
         return return_color
 
 
@@ -214,18 +225,21 @@ def apply_lightning_effect(objects,closest_surface,normal,ray,scene_settings,sur
                                     .rand()-0.5)*grid_ratio*v_up_light)
                     grid_ray = -(point_on_grid - closest_surface[1])
                     grid_ray /= np.linalg.norm(grid_ray)
-                    _ , point_closest_surface = find_closest_intersection(objects,point_on_grid,grid_ray)
+                    point_closest_intersection_dist , point_closest_surface = find_closest_intersection(objects,point_on_grid,grid_ray)
                     is_hit = True
-                    for pos in range(3) :
-                        if abs(point_closest_surface[0][pos] - closest_surface[1][pos]) > 0 :
+                    
+                    for pos in range(3):
+                        if abs(point_closest_surface[1][pos] - closest_surface[1][pos]) > 0.0001 :
                             is_hit = False
                             break
+                        
                     if is_hit :
                         soft_shadow_rays_counter += 1
             
-            light_intensity = (1 - shadow_intensity)*1 + shadow_intensity*(soft_shadow_rays_counter / (scene_settings.root.number.shadow.rays**2))
+            light_intensity = (1 - shadow_intensity)*1 + shadow_intensity*(soft_shadow_rays_counter / (scene_settings.root_number_shadow_rays**2))
             diffusion_and_specular = (np.array(material_diffuse)*np.dot(normal,light_intersection) + np.array(material_specular) +np.dot(view,reflected_light_intersction) ** surface_material.shininess)*light_intensity*light.specular_intensity
             return_color += np.array(diffusion_and_specular) * (1 - surface_material.transparency) * np.array(light.color) * 255
+            
     return return_color, reflected_ray
                        
 
@@ -248,7 +262,7 @@ def find_closest_intersection(objects, origin_point, ray):
                 answers = [x1,x2]
                 
                 for answer in answers:
-                    if 0 < answer < closest_intersection_dist:
+                    if 0.0001 < answer < closest_intersection_dist:
                         intersection_point = origin_point + answer * ray
                         closest_intersection_dist = answer
                         closest_surface = (item,intersection_point) 
@@ -269,11 +283,10 @@ def find_closest_intersection(objects, origin_point, ray):
 
             t_min = max(x_min,y_min,z_min)
             t_max = min(x_max,y_max,z_max)
-            
-            #
+
             if t_min < t_max:
                 #check if intersection is closer
-                if 0 < t_min < closest_intersection_dist:
+                if 0.0001 < t_min < closest_intersection_dist:
                     closest_intersection_dist = t_min
                     closest_surface = (item, origin_point + closest_intersection_dist * ray)
                     
@@ -284,7 +297,7 @@ def find_closest_intersection(objects, origin_point, ray):
             #if ray not parallel to the plane calculate distance to plane
             if np.dot(ray,normalized_item) != 0 :
                 t = -(np.dot(origin_point, normalized_item) - item.offset) / np.dot(ray, normalized_item)
-                if t < closest_intersection_dist:
+                if 0.0001 < t < closest_intersection_dist:
                     intersection_point = origin_point + t * ray
                     closest_intersection_dist = t
                     closest_surface = (item, intersection_point)
@@ -292,5 +305,6 @@ def find_closest_intersection(objects, origin_point, ray):
             continue
         
     return closest_intersection_dist, closest_surface
+
 if __name__ == '__main__':
     main()
