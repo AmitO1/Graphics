@@ -114,15 +114,15 @@ def trace_ray(ray ,i , j, image_array, scene_settings, objects,origin_point, dep
     # In case there is an Intersection, calculates the color of the pixel
     else :
         # Calculate the noraml of the closest surface in each case
-        if type(closest_surface[0]) == Sphere :
+        if type(closest_surface[0]) == Sphere:
             normal = closest_surface[1] - closest_surface[0].position
             normal /= np.linalg.norm(normal)
 
-        elif type(closest_surface[0]) == InfinitePlane :
-            noraml = closest_surface[0].normal
+        elif type(closest_surface[0]) == InfinitePlane:
+            normal = closest_surface[0].normal
             normal /= np.linalg.norm(normal)
 
-        elif type(closest_surface[0]) == Cube :
+        elif type(closest_surface[0]) == Cube:
             center = closest_surface[0].position
             edge_length = closest_surface[0].scale
             
@@ -229,7 +229,7 @@ def apply_lightning_effect(objects,closest_surface,normal,ray,scene_settings,sur
                     is_hit = True
                     
                     for pos in range(3):
-                        if abs(point_closest_surface[1][pos] - closest_surface[1][pos]) > 0.0001 :
+                        if abs(point_closest_surface[1][pos] - closest_surface[1][pos]) > 1e-7:
                             is_hit = False
                             break
                         
@@ -250,22 +250,23 @@ def find_closest_intersection(objects, origin_point, ray):
     for item in objects:
         if type(item) == Sphere:
             #Calculate coefficients to find components of the quadratic equaiton
-            a = 1 # since ray direction is normalized
-            b = 2 * np.dot(ray, np.array(origin_point) - np.array(item.position))
-            c = np.linalg.norm(np.array(origin_point- np.array(item.position)) ** 2 - item.radius ** 2)
-
-            discriminent = b ** 2 - 4*a*c
+            coefficients = [1, np.dot(2 * ray, np.array(origin_point) - np.array(item.position)),
+                            np.linalg.norm(np.array(origin_point) - np.array(
+                            item.position)) ** 2 - item.radius ** 2]
+            
+            discriminant = (coefficients[1] ** 2) - (4 * coefficients[0] * coefficients[2])
             
             #If discriminent positive find results for the equation
-            if discriminent >= 0:
-                x1,x2 = (-b - math.sqrt(discriminent)) / 2*a , (-b + math.sqrt(discriminent)) / 2*a
-                answers = [x1,x2]
-                
-                for answer in answers:
-                    if 0.0001 < answer < closest_intersection_dist:
-                        intersection_point = origin_point + answer * ray
-                        closest_intersection_dist = answer
-                        closest_surface = (item,intersection_point) 
+            if discriminant >= 0:
+                roots = [(-coefficients[1] - math.sqrt(discriminant)) / (2 * coefficients[0]),
+                         (-coefficients[1] + math.sqrt(discriminant)) / (2 * coefficients[0])]
+
+                for t in roots:
+                    if 1e-7 < t < closest_intersection_dist:
+                        point_of_intersection = origin_point + t * ray
+                        closest_intersection_dist = t
+                        closest_surface = (item, point_of_intersection)
+
         
         elif type(item) == Cube:
             #Cube properties
@@ -286,18 +287,18 @@ def find_closest_intersection(objects, origin_point, ray):
 
             if t_min < t_max:
                 #check if intersection is closer
-                if 0.0001 < t_min < closest_intersection_dist:
+                if 1e-7 < t_min < closest_intersection_dist:
                     closest_intersection_dist = t_min
                     closest_surface = (item, origin_point + closest_intersection_dist * ray)
                     
-        elif item == InfinitePlane:
+        elif type(item) == InfinitePlane:
             
-            normalized_item = np.array(item)
+            normalized_item = np.array(item.normal)
             normalized_item /= np.linalg.norm(normalized_item)
             #if ray not parallel to the plane calculate distance to plane
             if np.dot(ray,normalized_item) != 0 :
                 t = -(np.dot(origin_point, normalized_item) - item.offset) / np.dot(ray, normalized_item)
-                if 0.0001 < t < closest_intersection_dist:
+                if 1e-7 < t < closest_intersection_dist:
                     intersection_point = origin_point + t * ray
                     closest_intersection_dist = t
                     closest_surface = (item, intersection_point)
