@@ -134,16 +134,12 @@ def trace_ray(ray ,i , j, image_array, scene_settings, objects,origin_point, dep
                       (5,np.array([0,0,-1]),center[2] - edge_length/2)]
             
             minimal_distance = float('inf')
-            closest_plane = None
-            normal = None
 
             for plane_id, plane_normal, plane_position in planes :
                 distance = abs(closest_surface[1][plane_id//2] - plane_position)
                 if distance < minimal_distance :
                     minimal_distance = distance
-                    closest_plane = plane_id
                     normal = plane_normal
-            normal /= np.linalg.norm(normal)
 
         view = -(origin_point - closest_surface[1])
         view /= np.linalg.norm(view)
@@ -173,7 +169,7 @@ def trace_ray(ray ,i , j, image_array, scene_settings, objects,origin_point, dep
             return_color += np.array(surface_material.reflection_color) * recursion_color
             
         else :
-            transparency_color = trace_ray(ray,i,j,image_array,objects,scene_settings,closest_surface[1],depth + 1)
+            transparency_color = trace_ray(ray,i,j,image_array,scene_settings,objects,closest_surface[1],depth + 1)
             return_color += transparency_color * np.array(surface_material.transparency) + np.array(surface_material.reflection_color)*recursion_color
         
         if depth == 1:
@@ -220,9 +216,12 @@ def apply_lightning_effect(objects,closest_surface,normal,ray,scene_settings,sur
             for x in range(int(scene_settings.root_number_shadow_rays)) :
                 for y in range(int(scene_settings.root_number_shadow_rays)) :
                     #Calulate the point with randomness in order to avoid banding
-                    point_on_grid = light.position - v_right_light*grid_ratio*(x-math.floor(scene_settings.root_number_shadow_rays/2))-v_up_light*grid_ratio*(y - math.floor(scene_settings.root_number_shadow_rays/2)) + ((np.random
-                                    .rand()-0.5)*grid_ratio*v_right_light + (np.random
-                                    .rand()-0.5)*grid_ratio*v_up_light)
+                    point_on_grid = light.position - v_right_light*grid_ratio*(x-math.floor(
+                        scene_settings.root_number_shadow_rays/2))-v_up_light*grid_ratio*(y - math.floor(
+                        scene_settings.root_number_shadow_rays) / 2) + ((
+                        np.random.rand()-0.5)*grid_ratio*v_right_light + (
+                        np.random.rand()-0.5)*grid_ratio*v_up_light)
+                        
                     grid_ray = -(point_on_grid - closest_surface[1])
                     grid_ray /= np.linalg.norm(grid_ray)
                     point_closest_intersection_dist , point_closest_surface = find_closest_intersection(objects,point_on_grid,grid_ray)
@@ -236,7 +235,7 @@ def apply_lightning_effect(objects,closest_surface,normal,ray,scene_settings,sur
                     if is_hit :
                         soft_shadow_rays_counter += 1
             
-            light_intensity = (1 - shadow_intensity)*1 + shadow_intensity*(soft_shadow_rays_counter / (scene_settings.root_number_shadow_rays**2))
+            light_intensity = (1 - shadow_intensity) * 1 + shadow_intensity * (soft_shadow_rays_counter / (scene_settings.root_number_shadow_rays**2))
             diffusion_and_specular = (np.array(material_diffuse)*np.dot(normal,light_intersection) + np.array(material_specular) +np.dot(view,reflected_light_intersction) ** surface_material.shininess)*light_intensity*light.specular_intensity
             return_color += np.array(diffusion_and_specular) * (1 - surface_material.transparency) * np.array(light.color) * 255
             
@@ -286,7 +285,7 @@ def find_closest_intersection(objects, origin_point, ray):
             t_max = min(x_max,y_max,z_max)
 
             if t_min < t_max:
-                #check if intersection is closer
+                #check if the ray intersect the cube
                 if 1e-7 < t_min < closest_intersection_dist:
                     closest_intersection_dist = t_min
                     closest_surface = (item, origin_point + closest_intersection_dist * ray)
