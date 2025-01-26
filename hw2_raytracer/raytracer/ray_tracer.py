@@ -149,12 +149,12 @@ def trace_ray(ray ,i , j, image_array, scene_settings, objects,origin_point, dep
         counter = 0
         surface_material = None
         
-        for object in objects :
+        for object in objects:
             
             if type(object) == Material :
                 counter += 1
                 
-                if counter == material_index :
+                if counter == material_index:
                     surface_material = object
                     break 
                 
@@ -182,64 +182,88 @@ def trace_ray(ray ,i , j, image_array, scene_settings, objects,origin_point, dep
 
 def apply_lightning_effect(objects,closest_surface,normal,ray,scene_settings,surface_material,material_diffuse,material_specular,view):
     return_color = np.zeros(3)
-    for light in objects :
+    for light in objects:
+          
         if type(light) is not Light:
             continue
-        else :
+        else:
+
             shadow_intensity = light.shadow_intensity
-            # Intersection point - light vector
+
+            # Calculate the vector from the intersection point to the light and normalize it
             light_intersection = light.position - closest_surface[1]
             light_intersection /= np.linalg.norm(light_intersection)
-            # Intersection point - reflected light vector
-            reflected_light_intersction = 2*np.dot(light_intersection,normal)*normal - light_intersection
+
+            # Calculate the vector from the intersection point to the reflected light and normalize it
+            reflected_light_intersction = 2 * np.dot(light_intersection,normal) * normal - light_intersection
             reflected_light_intersction /= np.linalg.norm(reflected_light_intersction)
 
-            reflected_ray = ray - 2*np.dot(ray,normal)*normal
+            # Calculate the reflected ray
+            reflected_ray = ray - 2 * np.dot(ray, normal) * normal
             reflected_ray /= np.linalg.norm(reflected_ray)
 
+            # Get the grid width
             grid_width = light.radius
+
+            # Get the grid ratio by dividing the grid width by the number of shadow rays (getting the size of each
+            # grid cell)
             grid_ratio = grid_width / scene_settings.root_number_shadow_rays
 
-            # Building the vector for adjusting the light local space
-            rand_vector = np.array([light_intersection[0],light_intersection[1],light_intersection[2]+1])
-            rand_vector /= np.linalg.norm(rand_vector)
+            # Create a vector that is different from the intersection to light vector
+            rand_vector = np.array([light_intersection[0], light_intersection[1], light_intersection[2] + 1])
+            # Normalize the vector
+            rand_vector = rand_vector / np.linalg.norm(rand_vector)
+            # Get a vector that is perpendicular to the intersection to light vector and the random vector
+            light_v_up = np.cross(-light_intersection, rand_vector)
+            # Normalize the vector
+            light_v_up = light_v_up / np.linalg.norm(light_v_up)
+            # Get a vector that is perpendicular to the intersection to light vector and the light v up vector
+            light_v_right = np.cross(-light_intersection, light_v_up)
+            # Normalize the vector
+            light_v_right = light_v_right / np.linalg.norm(light_v_right)
 
-            # Define the direction in lightning local space
-            v_up_light = np.cross(-light_intersection,rand_vector) 
-            v_up_light /= np.linalg.norm(v_up_light)
+            # Initialize the shadow rays count
+            shadow_rays_count = 0
 
-            v_right_light = np.cross(-light_intersection,v_up_light)
-            v_right_light /= np.linalg.norm(v_right_light)
+            # Go for every grid cell
+            for x in range(int(scene_settings.root_number_shadow_rays)):
+                for y in range(int(scene_settings.root_number_shadow_rays)):
+                    # Calculate the point on the grid (with a random offset)
+                    point_on_grid = light.position - light_v_right * grid_ratio * (
+                        x - math.floor(
+                        scene_settings.root_number_shadow_rays / 2)) - light_v_up * grid_ratio * (y - math.floor(
+                        scene_settings.root_number_shadow_rays) / 2) + ((np.random.rand() - 0.5) * grid_ratio * light_v_right +
+                                                                        (np.random.rand() - 0.5) * grid_ratio * light_v_up)
+            
+                    grid_ray = - (point_on_grid - closest_surface[1])
+                    grid_ray = grid_ray / np.linalg.norm(grid_ray)
 
-            soft_shadow_rays_counter = 0
-
-            for x in range(int(scene_settings.root_number_shadow_rays)) :
-                for y in range(int(scene_settings.root_number_shadow_rays)) :
-                    #Calulate the point with randomness in order to avoid banding
-                    point_on_grid = light.position - v_right_light*grid_ratio*(x-math.floor(
-                        scene_settings.root_number_shadow_rays/2))-v_up_light*grid_ratio*(y - math.floor(
-                        scene_settings.root_number_shadow_rays) / 2) + ((
-                        np.random.rand()-0.5)*grid_ratio*v_right_light + (
-                        np.random.rand()-0.5)*grid_ratio*v_up_light)
-                        
-                    grid_ray = -(point_on_grid - closest_surface[1])
-                    grid_ray /= np.linalg.norm(grid_ray)
-                    point_closest_intersection_dist , point_closest_surface = find_closest_intersection(objects,point_on_grid,grid_ray)
-                    is_hit = True
+                   
+                    point_closest_intersection_distance, point_closest_surface = find_closest_intersection(objects,point_on_grid,grid_ray)
                     
-                    for pos in range(3):
-                        if abs(point_closest_surface[1][pos] - closest_surface[1][pos]) > 1e-7:
+                    is_hit = True
+                    for coord in range(3):
+                        if abs(point_closest_surface[1][coord] - closest_surface[1][coord]) > 0.00001:
                             is_hit = False
                             break
                         
-                    if is_hit :
-                        soft_shadow_rays_counter += 1
-            
-            light_intensity = (1 - shadow_intensity) * 1 + shadow_intensity * (soft_shadow_rays_counter / (scene_settings.root_number_shadow_rays**2))
-            diffusion_and_specular = (np.array(material_diffuse)*np.dot(normal,light_intersection) + np.array(material_specular) +np.dot(view,reflected_light_intersction) ** surface_material.shininess)*light_intensity*light.specular_intensity
-            return_color += np.array(diffusion_and_specular) * (1 - surface_material.transparency) * np.array(light.color) * 255
-            
-    return return_color, reflected_ray
+                    if is_hit:
+                        shadow_rays_count += 1
+
+            # Calculate the light intensity
+            light_intensity = (1 - shadow_intensity) * 1 + shadow_intensity * (
+                    shadow_rays_count / (scene_settings.root_number_shadow_rays ** 2))
+
+            # Calculate the diffusion and specular for the current light
+            diffusion_and_specular = (np.array(material_diffuse) * np.dot(normal, light_intersection) + \
+                                        np.array(material_specular) * np.dot(view,
+                                                                            reflected_light_intersction) ** surface_material.shininess) * light_intensity * light.specular_intensity
+
+            # Add the diffusion and specular of the current light to the return color
+            return_color += np.array(diffusion_and_specular) * \
+                            (1 - surface_material.transparency) * np.array(light.color) * 255
+                            
+    return return_color,reflected_ray
                        
 
 def find_closest_intersection(objects, origin_point, ray):
