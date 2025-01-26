@@ -178,8 +178,6 @@ def trace_ray(ray ,i , j, image_array, scene_settings, objects,origin_point, dep
         return return_color
 
 
-
-
 def apply_lightning_effect(objects,closest_surface,normal,ray,scene_settings,surface_material,material_diffuse,material_specular,view):
     return_color = np.zeros(3)
     for light in objects:
@@ -189,46 +187,34 @@ def apply_lightning_effect(objects,closest_surface,normal,ray,scene_settings,sur
         else:
 
             shadow_intensity = light.shadow_intensity
-
-            # Calculate the vector from the intersection point to the light and normalize it
+            # Intersection point - light vector
             light_intersection = light.position - closest_surface[1]
             light_intersection /= np.linalg.norm(light_intersection)
-
-            # Calculate the vector from the intersection point to the reflected light and normalize it
+            # Intersection point - reflected light vector
             reflected_light_intersction = 2 * np.dot(light_intersection,normal) * normal - light_intersection
             reflected_light_intersction /= np.linalg.norm(reflected_light_intersction)
 
-            # Calculate the reflected ray
             reflected_ray = ray - 2 * np.dot(ray, normal) * normal
             reflected_ray /= np.linalg.norm(reflected_ray)
 
-            # Get the grid width
             grid_width = light.radius
 
-            # Get the grid ratio by dividing the grid width by the number of shadow rays (getting the size of each
-            # grid cell)
             grid_ratio = grid_width / scene_settings.root_number_shadow_rays
-
-            # Create a vector that is different from the intersection to light vector
+            # Building the vector for adjusting the light local space
             rand_vector = np.array([light_intersection[0], light_intersection[1], light_intersection[2] + 1])
-            # Normalize the vector
             rand_vector = rand_vector / np.linalg.norm(rand_vector)
-            # Get a vector that is perpendicular to the intersection to light vector and the random vector
+            # Define the direction in lightning local space
             light_v_up = np.cross(-light_intersection, rand_vector)
-            # Normalize the vector
-            light_v_up = light_v_up / np.linalg.norm(light_v_up)
-            # Get a vector that is perpendicular to the intersection to light vector and the light v up vector
+            light_v_up /= np.linalg.norm(light_v_up)
+        
             light_v_right = np.cross(-light_intersection, light_v_up)
-            # Normalize the vector
-            light_v_right = light_v_right / np.linalg.norm(light_v_right)
+            light_v_right /= np.linalg.norm(light_v_right)
 
-            # Initialize the shadow rays count
             shadow_rays_count = 0
 
-            # Go for every grid cell
             for x in range(int(scene_settings.root_number_shadow_rays)):
                 for y in range(int(scene_settings.root_number_shadow_rays)):
-                    # Calculate the point on the grid (with a random offset)
+                    #Calulate the point with randomness in order to avoid banding
                     point_on_grid = light.position - light_v_right * grid_ratio * (
                         x - math.floor(
                         scene_settings.root_number_shadow_rays / 2)) - light_v_up * grid_ratio * (y - math.floor(
@@ -236,7 +222,7 @@ def apply_lightning_effect(objects,closest_surface,normal,ray,scene_settings,sur
                                                                         (np.random.rand() - 0.5) * grid_ratio * light_v_up)
             
                     grid_ray = - (point_on_grid - closest_surface[1])
-                    grid_ray = grid_ray / np.linalg.norm(grid_ray)
+                    grid_ray /= np.linalg.norm(grid_ray)
 
                    
                     point_closest_intersection_distance, point_closest_surface = find_closest_intersection(objects,point_on_grid,grid_ray)
@@ -250,18 +236,12 @@ def apply_lightning_effect(objects,closest_surface,normal,ray,scene_settings,sur
                     if is_hit:
                         shadow_rays_count += 1
 
-            # Calculate the light intensity
-            light_intensity = (1 - shadow_intensity) * 1 + shadow_intensity * (
-                    shadow_rays_count / (scene_settings.root_number_shadow_rays ** 2))
-
-            # Calculate the diffusion and specular for the current light
+            light_intensity = (1 - shadow_intensity) * 1 + shadow_intensity * (shadow_rays_count / (scene_settings.root_number_shadow_rays ** 2))
             diffusion_and_specular = (np.array(material_diffuse) * np.dot(normal, light_intersection) + \
                                         np.array(material_specular) * np.dot(view,
                                                                             reflected_light_intersction) ** surface_material.shininess) * light_intensity * light.specular_intensity
 
-            # Add the diffusion and specular of the current light to the return color
-            return_color += np.array(diffusion_and_specular) * \
-                            (1 - surface_material.transparency) * np.array(light.color) * 255
+            return_color += np.array(diffusion_and_specular) * (1 - surface_material.transparency) * np.array(light.color) * 255
                             
     return return_color,reflected_ray
                        
@@ -273,16 +253,14 @@ def find_closest_intersection(objects, origin_point, ray):
     for item in objects:
         if type(item) == Sphere:
             #Calculate coefficients to find components of the quadratic equaiton
-            coefficients = [1, np.dot(2 * ray, np.array(origin_point) - np.array(item.position)),
-                            np.linalg.norm(np.array(origin_point) - np.array(
-                            item.position)) ** 2 - item.radius ** 2]
+            b = np.dot(2 * ray, np.array(origin_point) - np.array(item.position))
+            c = np.linalg.norm(np.array(origin_point) - np.array(item.position)) ** 2 - item.radius ** 2
             
-            discriminant = (coefficients[1] ** 2) - (4 * coefficients[0] * coefficients[2])
+            discriminant = (b ** 2) - (4 * c)
             
             #If discriminent positive find results for the equation
             if discriminant >= 0:
-                roots = [(-coefficients[1] - math.sqrt(discriminant)) / (2 * coefficients[0]),
-                         (-coefficients[1] + math.sqrt(discriminant)) / (2 * coefficients[0])]
+                roots = [(-b - math.sqrt(discriminant)) / 2,(-b + math.sqrt(discriminant)) / 2]
 
                 for t in roots:
                     if 1e-7 < t < closest_intersection_dist:
